@@ -1,0 +1,114 @@
+trigger:
+- main  # Pipeline triggers on changes to the main branch
+
+pool:
+  vmImage: 'ubuntu-latest'  # Use an Ubuntu build agent
+
+variables:
+  # Service Principal for Terraform
+  ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+  ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+  ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+  ARM_TENANT_ID: $(ARM_TENANT_ID)
+
+  # Docker Registry Variables
+  DOCKER_REGISTRY: "<your-docker-registry>.azurecr.io"
+  DOCKER_USERNAME: $(DOCKER_USERNAME)
+  DOCKER_PASSWORD: $(DOCKER_PASSWORD)
+
+stages:
+# Stage 1: Build
+- stage: Build
+  displayName: Build Applications
+  jobs:
+  - job: BuildBackend
+    displayName: Build Java Backend
+    steps:
+    - task: UseJava@1
+      inputs:
+        version: '11'  # Java version
+        jdkArchitecture: 'x64'
+    - script: |
+        ./mvnw clean package
+      displayName: Build Backend with Maven
+
+  - job: BuildFrontend
+    displayName: Build React Frontend
+    steps:
+    - script: |
+        npm install
+        npm run build
+      displayName: Build Frontend with npm
+
+# Stage 2: Test
+- stage: Test
+  displayName: Test Applications
+  jobs:
+  - job: TestBackend
+    displayName: Test Java Backend
+    steps:
+    - script: |
+        ./mvnw test
+      displayName: Run Backend Unit Tests
+
+  - job: TestFrontend
+    displayName: Test React Frontend
+    steps:
+    - script: |
+        npm run lint
+        npm run test
+      displayName: Lint and Test Frontend
+
+# Stage 3: Dockerize
+- stage: Dockerize
+  displayName: Build and Push Docker Images
+  dependsOn:
+  - Build
+  jobs:
+  - job: DockerizeBackend
+    displayName: Dockerize Backend
+    steps:
+    - script: |
+        docker build -t $(DOCKER_REGISTRY)/java-backend:latest .
+        echo $(DOCKER_PASSWORD) | docker login $(DOCKER_REGISTRY) -u $(DOCKER_USERNAME) --password-stdin
+        docker push $(DOCKER_REGISTRY)/java-backend:latest
+      displayName: Dockerize and Push Backend Image
+
+  - job: DockerizeFrontend
+    displayName: Dockerize Frontend
+    steps:
+    - script: |
+        docker build -t $(DOCKER_REGISTRY)/react-frontend:latest .
+        echo $(DOCKER_PASSWORD) | docker login $(DOCKER_REGISTRY) -u $(DOCKER_USERNAME) --password-stdin
+        docker push $(DOCKER_REGISTRY)/react-frontend:latest
+      displayName: Dockerize and Push Frontend Image
+
+# Stage 4: Deploy
+- stage: Deploy
+  displayName: Deploy Applications
+  dependsOn:
+  - Dockerize
+  jobs:
+  - deployment: DeployBackend
+    displayName: Deploy Java Backend
+    environment: 'staging'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - script: |
+              az login --service-principal -u $(ARM_CLIENT_ID) -p $(ARM_CLIENT_SECRET) --tenant $(ARM_TENANT_ID)
+              az webapp create --name java-backend-service --plan react-and-java-plan --resource-group react-and-java-rg --deployment-container-image-name $(DOCKER_REGISTRY)/java-backend:latest
+            displayName: Deploy Backend to Azure
+
+  - deployment: DeployFrontend
+    displayName: Deploy React Frontend
+    environment: 'staging'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - script: |
+              az login --service-principal -u $(ARM_CLIENT_ID) -p $(ARM_CLIENT_SECRET) --tenant $(ARM_TENANT_ID)
+              az webapp create --name react-frontend-service --plan react-and-java-plan --resource-group react-and-java-rg --deployment-container-image-name $(DOCKER_REGISTRY)/react-frontend:latest
+            displayName: Deploy Frontend to Azure

@@ -1,0 +1,30 @@
+# deploy-environment.yml
+# Deployment template for Azure DevOps pipeline
+
+parameters:
+  environment: ''
+  dockerRegistry: ''
+  backendImageName: ''
+  frontendImageName: ''
+  backendServiceName: ''
+  frontendServiceName: ''
+
+jobs:
+  - job: DeployTo${{ parameters.environment }}
+    displayName: Deploy to ${{ parameters.environment }} environment
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+      - script: |
+          echo "Deploying Backend to ${{ parameters.environment }} environment"
+          az webapp config container set --name ${{ parameters.backendServiceName }} \
+              --resource-group <your-resource-group-${{ parameters.environment }}> \
+              --docker-custom-image-name ${{ parameters.dockerRegistry }}/${{ parameters.backendImageName }}:${{ parameters.environment }}
+        displayName: Deploy Backend
+
+      - script: |
+          echo "Deploying Frontend to ${{ parameters.environment }} environment"
+          az webapp config container set --name ${{ parameters.frontendServiceName }} \
+              --resource-group <your-resource-group-${{ parameters.environment }}> \
+              --docker-custom-image-name ${{ parameters.dockerRegistry }}/${{ parameters.frontendImageName }}:${{ parameters.environment }}
+        displayName: Deploy Frontend

@@ -1,0 +1,9 @@
+variable "app_service_plan_name" {}
+variable "backend_app_service_name" {}
+variable "frontend_app_service_name" {}
+variable "backend_container_image" {}
+variable "frontend_container_image" {}
+variable "backend_subnet_id" {}
+variable "frontend_subnet_id" {}
+variable "resource_group_name" {}
+variable "location" {}
